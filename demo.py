@@ -86,11 +86,14 @@ def step1_generate_data():
 
 
 def step2_spark_pipeline():
-    """Step 2: Run Spark Bronze → Silver pipeline."""
-    print_step(2, "SPARK ETL PIPELINE (Bronze → Silver)")
+    """Step 2: Run Spark Bronze → Silver pipeline (3 joined tables)."""
+    print_step(2, "SPARK ETL PIPELINE (Bronze → Silver — 3 joined tables)")
 
     print("  Bronze Layer: Ingest raw files with metadata")
-    print("  Silver Layer: Clean, dedupe, add DQ flags")
+    print("  Silver Layer: Join related tables, clean, add DQ flags")
+    print("    order_facts       = orders + order_items (agg) + refunds")
+    print("    delivery_ops      = delivery_events + riders")
+    print("    restaurant_support = support_tickets → orders → restaurants")
     print()
 
     start = time.time()
@@ -101,9 +104,8 @@ def step2_spark_pipeline():
     elapsed = time.time() - start
     print(f"\n  ✓ Spark pipeline complete in {elapsed:.1f}s")
 
-    # Show silver files
     from config.settings import PATHS
-    print("\n  Silver layer (Parquet):")
+    print("\n  Silver layer (3 Parquet tables):")
     silver_path = PATHS["silver"]
     for d in sorted(silver_path.iterdir()):
         if d.is_dir():
@@ -111,9 +113,44 @@ def step2_spark_pipeline():
             print(f"    • {d.name}/: {total_size:.2f} MB")
 
 
-def step3_load_duckdb():
-    """Step 3: Load Silver data into DuckDB."""
-    print_step(3, "LOAD INTO DUCKDB WAREHOUSE")
+def step3_profile_silver():
+    """Step 3: Run QA anomaly checks on Silver tables."""
+    print_step(3, "QA PROFILING — ANOMALY CHECKS")
+
+    print("  Running anomaly checks on Silver layer...")
+    print()
+
+    import pandas as pd
+    from config.settings import PATHS
+    from src.profiling.anomaly_checker import AnomalyChecker
+
+    checker = AnomalyChecker()
+    silver_path = PATHS["silver"]
+
+    def load_parquet(table: str) -> pd.DataFrame:
+        import glob as gl
+        files = gl.glob(str(silver_path / table / "**/*.parquet"), recursive=True)
+        if not files:
+            return pd.DataFrame()
+        return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+
+    order_facts = load_parquet("order_facts")
+    delivery_ops = load_parquet("delivery_ops")
+    restaurant_support = load_parquet("restaurant_support")
+
+    if not order_facts.empty:
+        checker.check_order_facts(order_facts).print()
+    if not delivery_ops.empty:
+        checker.check_delivery_ops(delivery_ops).print()
+    if not restaurant_support.empty:
+        checker.check_restaurant_support(restaurant_support).print()
+
+    print()
+
+
+def step4_load_duckdb():
+    """Step 4: Load Silver data into DuckDB."""
+    print_step(4, "LOAD INTO DUCKDB WAREHOUSE")
 
     print("  Loading Silver Parquet files into DuckDB...")
     print()
@@ -127,9 +164,9 @@ def step3_load_duckdb():
     print(f"\n  ✓ DuckDB load complete in {elapsed:.1f}s")
 
 
-def step4_run_dbt():
-    """Step 4: Run dbt models."""
-    print_step(4, "DBT MODELING (Staging → Marts)")
+def step5_run_dbt():
+    """Step 5: Run dbt models."""
+    print_step(5, "DBT MODELING (Staging → Marts)")
 
     print("  Running dbt to build analytics models:")
     print("  • 7 staging views (stg_*)")
@@ -152,8 +189,8 @@ def step4_run_dbt():
     print("  Running dbt models...")
     result = subprocess.run("dbt run", shell=True, capture_output=True, text=True)
 
-    # Count successes
-    success_count = result.stdout.count("SUCCESS")
+    # Count successes (dbt uses "OK" in run output)
+    success_count = result.stdout.count(" OK ")
     print(f"  Built {success_count} models successfully")
 
     print("\n  Running dbt tests...")
@@ -167,9 +204,9 @@ def step4_run_dbt():
     print(f"\n  ✓ dbt complete in {elapsed:.1f}s")
 
 
-def step5_show_insights():
-    """Step 5: Query and display key business insights."""
-    print_step(5, "BUSINESS INSIGHTS FROM ANALYTICS MARTS")
+def step6_show_insights():
+    """Step 6: Query and display key business insights."""
+    print_step(6, "BUSINESS INSIGHTS FROM ANALYTICS MARTS")
 
     import duckdb
     from config.settings import PATHS
@@ -240,7 +277,7 @@ def step5_show_insights():
         result = con.execute("""
             SELECT refund_reason, COUNT(*) as count,
                    ROUND(SUM(refund_amount), 2) as total_amount
-            FROM refunds
+            FROM main_staging.stg_refunds
             GROUP BY refund_reason
             ORDER BY count DESC
         """).fetchdf()
@@ -298,7 +335,7 @@ def step5_show_insights():
     con.close()
 
 
-def step6_summary():
+def step7_summary():
     """Print final summary."""
     print_header("DEMO COMPLETE", "═")
 
@@ -310,9 +347,12 @@ def step6_summary():
   ├─────────────────┼──────────────────────────────────────────────┤
   │ 1. Generate     │ data/raw/*.csv, *.json (~75K orders)        │
   │ 2. Bronze       │ data/bronze/*/ (Parquet + metadata)         │
-  │ 3. Silver       │ data/silver/*/ (Cleaned + DQ flags)         │
-  │ 4. DuckDB       │ data/warehouse/analytics.duckdb             │
-  │ 5. dbt Marts    │ 5 analytics tables ready for BI             │
+  │ 3. Silver       │ 3 joined tables (order_facts, delivery_ops, │
+  │                 │   restaurant_support)                        │
+  │ 4. QA Profile   │ Anomaly checks on Silver (nulls, orphans,   │
+  │                 │   outliers, SLA spikes, refund spikes)       │
+  │ 5. DuckDB       │ data/warehouse/analytics.duckdb             │
+  │ 6. dbt Marts    │ 5 analytics tables ready for BI             │
   └─────────────────┴──────────────────────────────────────────────┘
 
   📊 Business Questions Answered:
@@ -343,9 +383,10 @@ def main():
     try:
         step1_generate_data()
         step2_spark_pipeline()
-        step3_load_duckdb()
-        step4_run_dbt()
-        step5_show_insights()
+        step3_profile_silver()
+        step4_load_duckdb()
+        step5_run_dbt()
+        step6_show_insights()
     except Exception as e:
         print(f"\n  ❌ Error: {e}")
         import traceback
@@ -355,7 +396,7 @@ def main():
     total_elapsed = time.time() - total_start
     print(f"\n  Total runtime: {total_elapsed:.1f}s ({total_elapsed/60:.1f} minutes)")
 
-    step6_summary()
+    step7_summary()
 
     return 0
 

@@ -18,12 +18,10 @@ final as (
         o.order_value,
         o.order_date,
 
-        r.refund_id,
-        r.refund_ts,
         r.refund_reason,
         r.refund_amount,
 
-        case when r.refund_id is not null then true else false end as has_refund,
+        case when r.refund_reason is not null then true else false end as has_refund,
 
         case
             when r.refund_reason = 'Delay' then 'Delay'

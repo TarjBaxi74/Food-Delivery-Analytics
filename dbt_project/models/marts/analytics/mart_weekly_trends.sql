@@ -25,11 +25,11 @@ weekly_orders as (
 
 weekly_refunds as (
     select
-        date_trunc('week', refund_ts::date) as week_start,
+        date_trunc('week', order_date::date) as week_start,
         count(*) as refund_count,
         round(sum(refund_amount), 2) as refund_amount
     from refunds
-    group by date_trunc('week', refund_ts::date)
+    group by date_trunc('week', order_date::date)
 ),
 
 combined as (

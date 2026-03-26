@@ -6,9 +6,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from pyspark.sql import SparkSession
 from config.settings import PATHS
 from src.spark_jobs.bronze.ingest_raw import BronzeIngestion
-from src.spark_jobs.silver.clean_orders import OrdersCleaner
-from src.spark_jobs.silver.clean_delivery_events import DeliveryEventsCleaner
-from src.spark_jobs.silver.clean_simple import SimpleTableCleaner
+from src.spark_jobs.silver.build_order_facts import OrderFactsBuilder
+from src.spark_jobs.silver.build_delivery_ops import DeliveryOpsBuilder
+from src.spark_jobs.silver.build_restaurant_support import RestaurantSupportBuilder
 from src.spark_jobs.common.quality_checks import get_dq_summary, print_dq_report
 
 
@@ -27,50 +27,46 @@ def run_pipeline():
     spark = create_spark_session()
     spark.sparkContext.setLogLevel("WARN")
 
-    raw_path = str(PATHS["raw"])
     bronze_path = str(PATHS["bronze"])
     silver_path = str(PATHS["silver"])
 
     try:
+        # ── Bronze ────────────────────────────────────────────────────────────
         print("=" * 60)
         print("BRONZE LAYER - Ingesting raw files")
         print("=" * 60)
-        bronze = BronzeIngestion(spark=spark, raw_path=raw_path, bronze_path=bronze_path)
+        bronze = BronzeIngestion(spark=spark,
+                                 raw_path=str(PATHS["raw"]),
+                                 bronze_path=bronze_path)
         bronze.run_all()
 
+        # ── Silver ────────────────────────────────────────────────────────────
         print("\n" + "=" * 60)
-        print("SILVER LAYER - Cleaning and transforming")
+        print("SILVER LAYER - 3 joined tables")
         print("=" * 60)
 
-        # Orders
-        orders_cleaner = OrdersCleaner(spark, bronze_path, silver_path)
-        orders_bronze = orders_cleaner.read_bronze()
-        orders_silver = orders_cleaner.clean(orders_bronze)
-        orders_cleaner.write_silver(orders_silver)
-        dq = get_dq_summary(orders_silver, ["_dq_has_null_customer", "_dq_invalid_order_value", "_dq_future_order"])
-        print_dq_report("orders", dq)
+        # 1. order_facts = orders + order_items (agg) + refunds
+        order_facts = OrderFactsBuilder(spark, bronze_path, silver_path)
+        df_orders = order_facts.build()
+        order_facts.write(df_orders)
+        dq = get_dq_summary(df_orders, ["_dq_has_null_customer",
+                                         "_dq_invalid_order_value",
+                                         "_dq_future_order"])
+        print_dq_report("order_facts", dq)
 
-        # Delivery events
-        events_cleaner = DeliveryEventsCleaner(spark, bronze_path, silver_path)
-        events_bronze = events_cleaner.read_bronze()
-        events_silver = events_cleaner.clean(events_bronze)
-        events_cleaner.write_silver(events_silver)
-        dq = get_dq_summary(events_silver, ["_dq_orphan_order", "_dq_invalid_event_type", "_dq_missing_rider"])
-        print_dq_report("delivery_events", dq)
+        # 2. delivery_ops = delivery_events + riders
+        delivery_ops = DeliveryOpsBuilder(spark, bronze_path, silver_path)
+        df_delivery = delivery_ops.build()
+        delivery_ops.write(df_delivery)
+        dq = get_dq_summary(df_delivery, ["_dq_orphan_order",
+                                           "_dq_invalid_event",
+                                           "_dq_missing_rider"])
+        print_dq_report("delivery_ops", dq)
 
-        # Simple tables
-        simple_tables = [
-            ("order_items", "item_id"),
-            ("restaurants", "restaurant_id"),
-            ("riders", "rider_id"),
-            ("refunds", "refund_id"),
-            ("support_tickets", "ticket_id"),
-        ]
-        for table_name, pk_col in simple_tables:
-            cleaner = SimpleTableCleaner(spark, bronze_path, silver_path, table_name, pk_col)
-            df = cleaner.read_bronze()
-            cleaned = cleaner.clean(df)
-            cleaner.write_silver(cleaned)
+        # 3. restaurant_support = restaurants + support_tickets (via orders)
+        restaurant_support = RestaurantSupportBuilder(spark, bronze_path, silver_path)
+        df_rest = restaurant_support.build()
+        restaurant_support.write(df_rest)
 
         print("\n" + "=" * 60)
         print("PIPELINE COMPLETE")

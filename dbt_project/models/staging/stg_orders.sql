@@ -1,7 +1,7 @@
 {{ config(materialized='view') }}
 
 with source as (
-    select * from {{ source('silver', 'orders') }}
+    select * from {{ source('silver', 'order_facts') }}
 ),
 
 staged as (

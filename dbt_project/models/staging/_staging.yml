@@ -2,67 +2,54 @@ version: 2
 
 sources:
   - name: silver
-    description: "Silver layer tables loaded from Parquet into DuckDB"
+    description: "3 joined Silver tables loaded from Parquet into DuckDB"
     schema: main
     tables:
-      - name: orders
-      - name: order_items
-      - name: delivery_events
-      - name: restaurants
-      - name: riders
-      - name: refunds
-      - name: support_tickets
+      - name: order_facts
+        description: "orders + order_items (aggregated) + refunds — one row per order"
+      - name: delivery_ops
+        description: "delivery_events + riders — one row per event, enriched with rider context"
+      - name: restaurant_support
+        description: "support_tickets joined via orders to restaurant dimension"
 
 models:
   - name: stg_orders
-    description: "Staged orders with DQ filtering"
+    description: "Orders with DQ filtering and derived time columns (from order_facts)"
     columns:
       - name: order_id
-        tests:
-          - unique
-          - not_null
+        tests: [unique, not_null]
       - name: order_value
-        tests:
-          - not_null
-
-  - name: stg_delivery_events
-    description: "Staged delivery events excluding orphans"
-    columns:
-      - name: order_id
-        tests:
-          - not_null
+        tests: [not_null]
 
   - name: stg_order_items
-    description: "Staged order items"
-
-  - name: stg_restaurants
-    description: "Staged restaurants"
-    columns:
-      - name: restaurant_id
-        tests:
-          - unique
-          - not_null
-
-  - name: stg_riders
-    description: "Staged riders"
-    columns:
-      - name: rider_id
-        tests:
-          - unique
-          - not_null
+    description: "Aggregated item metrics per order, extracted from order_facts"
 
   - name: stg_refunds
-    description: "Staged refunds"
+    description: "Refund records extracted from order_facts where has_refund = true"
     columns:
-      - name: refund_id
-        tests:
-          - unique
-          - not_null
+      - name: order_id
+        tests: [not_null]
+
+  - name: stg_delivery_events
+    description: "Delivery events (orphans excluded), with rider context from delivery_ops"
+    columns:
+      - name: order_id
+        tests: [not_null]
+
+  - name: stg_riders
+    description: "Distinct rider dimension extracted from delivery_ops"
+    columns:
+      - name: rider_id
+        tests: [unique, not_null]
+
+  - name: stg_restaurants
+    description: "Restaurant dimension extracted from restaurant_support"
+    columns:
+      - name: restaurant_id
+        tests: [unique, not_null]
 
   - name: stg_support_tickets
-    description: "Staged support tickets"
+    description: "Support tickets with restaurant context, from restaurant_support"
     columns:
       - name: ticket_id
-        tests:
-          - unique
-          - not_null
+        tests: [unique, not_null]
