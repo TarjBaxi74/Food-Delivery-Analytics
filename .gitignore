@@ -1,0 +1,63 @@
+# Data files (exclude generated data)
+data/raw/*.csv
+data/raw/*.json
+data/bronze/**/*.parquet
+data/bronze/**/*.snappy
+data/silver/**/*.parquet
+data/silver/**/*.snappy
+data/warehouse/*.duckdb
+data/warehouse/*.duckdb.wal
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/warehouse/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+dbt_project/dbt_modules/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Spark
+metastore_db/
+derby.log
+spark-warehouse/
