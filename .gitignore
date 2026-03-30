@@ -3,8 +3,16 @@ data/raw/*.csv
 data/raw/*.json
 data/bronze/**/*.parquet
 data/bronze/**/*.snappy
+data/bronze/**/*.part*
+data/bronze/**/.part*
+data/bronze/**/_SUCCESS*
+data/bronze/**/.*.crc
 data/silver/**/*.parquet
 data/silver/**/*.snappy
+data/silver/**/*.part*
+data/silver/**/.part*
+data/silver/**/_SUCCESS*
+data/silver/**/.*.crc
 data/warehouse/*.duckdb
 data/warehouse/*.duckdb.wal
 
