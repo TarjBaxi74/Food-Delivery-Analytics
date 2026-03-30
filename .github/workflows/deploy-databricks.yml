@@ -1,0 +1,48 @@
+name: Deploy to Databricks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'databricks/**'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Databricks CLI
+        run: |
+          pip install databricks-cli
+      
+      - name: Configure Databricks CLI
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          echo "$DATABRICKS_HOST" > ~/.databrickscfg
+          echo "$DATABRICKS_TOKEN" >> ~/.databrickscfg
+      
+      - name: Deploy Notebooks
+        env:
+          DATABRICKS_USER: ${{ secrets.DATABRICKS_USER }}
+        run: |
+          databricks workspace import_dir \
+            ./databricks \
+            /Users/$DATABRICKS_USER/databricks \
+            --overwrite
+      
+      - name: Deployment Summary
+        run: |
+          echo "✅ Notebooks deployed successfully!"
+          echo "📍 Location: /Users/${{ secrets.DATABRICKS_USER }}/databricks/"
+          echo "🔗 Workspace: ${{ secrets.DATABRICKS_HOST }}"

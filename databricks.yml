@@ -1,0 +1,73 @@
+bundle:
+  name: food-delivery-pipeline
+
+workspace:
+  host: https://YOUR_WORKSPACE.cloud.databricks.com
+
+resources:
+  jobs:
+    daily_pipeline:
+      name: Food Delivery Daily Pipeline
+      
+      tasks:
+        - task_key: generate_data
+          notebook_task:
+            notebook_path: ./databricks/01_Data_Generation_Daily
+            source: WORKSPACE
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1
+        
+        - task_key: bronze_ingestion
+          depends_on:
+            - task_key: generate_data
+          notebook_task:
+            notebook_path: ./databricks/02_Bronze_Ingestion
+            source: WORKSPACE
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1
+        
+        - task_key: silver_transformation
+          depends_on:
+            - task_key: bronze_ingestion
+          notebook_task:
+            notebook_path: ./databricks/03_Silver_Transformation
+            source: WORKSPACE
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1
+        
+        - task_key: dbt_models
+          depends_on:
+            - task_key: silver_transformation
+          notebook_task:
+            notebook_path: ./databricks/04_DBT_Models
+            source: WORKSPACE
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1
+      
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"  # Daily at 2 AM
+        timezone_id: "UTC"
+      
+      email_notifications:
+        on_failure:
+          - YOUR_EMAIL@example.com
+
+# For serverless compute, use this instead:
+# resources:
+#   jobs:
+#     daily_pipeline:
+#       name: Food Delivery Daily Pipeline
+#       tasks:
+#         - task_key: generate_data
+#           notebook_task:
+#             notebook_path: ./databricks/01_Data_Generation_Daily
+#             source: WORKSPACE
+#           # No cluster config = uses serverless
